@@ -3,6 +3,7 @@ use libp2p::swarm::{SwarmBuilder, SwarmEvent};
 use libp2p::{identity, Multiaddr, PeerId};
 use libp2p_perf::{build_transport, Perf, TransportSecurity};
 use log::warn;
+use std::time::{Duration, Instant};
 use structopt::StructOpt;
 
 #[derive(Debug, StructOpt)]
@@ -13,6 +14,9 @@ use structopt::StructOpt;
 struct Opt {
     #[structopt(long)]
     server_address: Multiaddr,
+
+    #[structopt(long)]
+    http_server_address: Option<Multiaddr>,
 
     #[structopt(long)]
     transport_security: Option<TransportSecurity>,
@@ -69,4 +73,45 @@ async fn main() {
             e => panic!("{:?}", e),
         }
     }
+
+    // http measurements
+    if let Some(addr) = opt.http_server_address {
+        http_get(addr).await;
+    }
+}
+
+const SIZE: usize = 1024 * 1024;
+
+async fn http_get(mut addr: Multiaddr) {
+    use libp2p::core::multiaddr::Protocol;
+
+    let port = if let Some(Protocol::Tcp(port)) = addr.pop() {
+        port
+    } else {
+        panic!("invalid multiaddr, expected tcp, got {:?}", addr)
+    };
+    let host = if let Some(Protocol::Ip4(host)) = addr.pop() {
+        host
+    } else {
+        panic!("invalid multiaddr, expected ipv4, got {:?}", addr)
+    };
+
+    println!("http-get: {}:{}/get", host, port);
+
+    let mut bytes = 0;
+    let start = Instant::now();
+
+    while start.elapsed() < Duration::from_secs(10) {
+        let res = surf::get(format!("http://{}:{}/get", host, port))
+            .recv_bytes()
+            .await
+            .unwrap();
+        assert_eq!(res.len(), SIZE);
+        bytes += res.len();
+    }
+
+    println!(
+        "HTTP: transferred {} MBytes in 10s",
+        bytes as f32 / (1000. * 1000.)
+    );
 }

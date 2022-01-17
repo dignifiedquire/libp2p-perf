@@ -17,6 +17,9 @@ struct Opt {
     listen_address: Multiaddr,
 
     #[structopt(long)]
+    http_listen_address: Option<Multiaddr>,
+
+    #[structopt(long)]
     private_key_pkcs8: Option<PathBuf>,
 }
 
@@ -44,6 +47,10 @@ async fn main() {
     server.listen_on(opt.listen_address).unwrap();
     let mut listening = false;
 
+    if let Some(addr) = opt.http_listen_address {
+        async_std::task::spawn(http_server(addr));
+    }
+
     poll_fn(|cx| loop {
         match server.poll_next_unpin(cx) {
             Poll::Ready(Some(e)) => println!("{:?}", e),
@@ -61,4 +68,34 @@ async fn main() {
         }
     })
     .await
+}
+
+async fn http_server(mut addr: Multiaddr) {
+    let mut app = tide::new();
+
+    use libp2p::core::multiaddr::Protocol;
+
+    let port = if let Some(Protocol::Tcp(port)) = addr.pop() {
+        port
+    } else {
+        panic!("invalid multiaddr, expected tcp, got {:?}", addr)
+    };
+    let host = if let Some(Protocol::Ip4(host)) = addr.pop() {
+        host
+    } else {
+        panic!("invalid multiaddr, expected ipv4, got {:?}", addr)
+    };
+
+    println!("listening on {}:{}/get", host, port);
+    app.at("/get").get(http_get);
+    app.listen(format!("{}:{}", host, port))
+        .await
+        .expect("failed http");
+}
+
+async fn http_get(_req: tide::Request<()>) -> tide::Result {
+    let mut res = tide::Response::new(200);
+    let body = tide::Body::from_bytes(vec![1u8; 1024 * 1024]);
+    res.set_body(body);
+    Ok(res)
 }
