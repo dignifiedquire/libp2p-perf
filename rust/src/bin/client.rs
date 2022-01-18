@@ -41,7 +41,7 @@ async fn main() {
         }))
         .build();
 
-    client.dial_addr(opt.server_address).unwrap();
+    client.dial(opt.server_address).unwrap();
 
     loop {
         match client.next().await.expect("Infinite stream.") {

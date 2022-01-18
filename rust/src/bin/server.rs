@@ -12,7 +12,9 @@ use structopt::StructOpt;
 )]
 struct Opt {
     #[structopt(long)]
-    listen_address: Vec<Multiaddr>,
+    tcp_listen_address: Option<Multiaddr>,
+    #[structopt(long)]
+    quic_listen_address: Option<Multiaddr>,
 
     #[structopt(long)]
     private_key_pkcs8: Option<PathBuf>,
@@ -32,11 +34,19 @@ async fn main() {
     let local_peer_id = PeerId::from(key.public());
 
     println!("Local peer id: {:?}", local_peer_id);
+    let mut listen_addrs = vec![];
 
+    if let Some(ref addr) = opt.quic_listen_address {
+        listen_addrs.push(addr.clone());
+    }
+    if let Some(ref addr) = opt.tcp_listen_address {
+        listen_addrs.push(addr.clone());
+    }
+    
     let transport = build_transport(
         key,
         TcpTransportSecurity::All,
-        Some("/ip4/0.0.0.0/udp/9992/quic".parse().unwrap()),
+        opt.quic_listen_address,
     )
     .unwrap();
     let perf = Perf::default();
@@ -47,10 +57,10 @@ async fn main() {
         .build();
 
     assert!(
-        !opt.listen_address.is_empty(),
+        !listen_addrs.is_empty(),
         "Provide at least one listen address."
     );
-    for addr in opt.listen_address {
+    for addr in listen_addrs {
         println!("about to listen on {:?}", addr);
         server.listen_on(addr).unwrap();
     }
